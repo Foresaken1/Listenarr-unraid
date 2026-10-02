@@ -460,7 +460,8 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             apiMock.FilesResponseOverride = """
             [
                 { "name": "Book/book.epub" },
-                { "name": "Book/book.pdf" }
+                { "name": "Book/book.pdf" },
+                { "name": "Book/audiobook-sample.mp3" }
             ]
             """;
 

@@ -158,7 +158,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             }
 
             var name = nameElement.GetString();
-            return !string.IsNullOrWhiteSpace(name) && FileUtils.IsAudioFile(name);
+            if (string.IsNullOrWhiteSpace(name) || !FileUtils.IsAudioFile(name))
+            {
+                return false;
+            }
+
+            var fileName = Path.GetFileNameWithoutExtension(name.Replace('\\', '/'));
+            return !fileName.Contains("sample", StringComparison.OrdinalIgnoreCase)
+                && !fileName.Contains("preview", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task StartTorrentAsync(HttpClient httpClient, string baseUrl, string hash, CancellationToken ct)

@@ -338,11 +338,11 @@ namespace Listenarr.Api.Features.Library
                     message = "The root folder confirmation request is invalid."
                 });
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException exception)
             {
                 return Conflict(new
                 {
-                    message = "The current root folder could not be confirmed. Refresh its storage state and try again.",
+                    message = exception.Message,
                     code = "root_folder_confirmation_blocked"
                 });
             }
