@@ -108,6 +108,7 @@ internal static class DownloadClientRegistrationExtensions
             new QbittorrentAddWorkflow(
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<QbittorrentAuthSession>(),
+                sp.GetRequiredService<QbittorrentRemovalWorkflow>(),
                 sp.GetRequiredService<ILogger<QbittorrentAdapter>>(),
                 DownloadClientTypes.Qbittorrent));
         services.AddScoped<QbittorrentImportMarkerWorkflow>(sp =>

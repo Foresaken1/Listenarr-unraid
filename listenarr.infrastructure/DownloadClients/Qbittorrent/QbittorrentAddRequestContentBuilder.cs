@@ -27,16 +27,31 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             if (addPlan.TorrentFileData != null)
             {
                 var multipart = new MultipartFormDataContent();
+
                 multipart.Add(new StringContent(addPlan.SavePath), "savepath");
+
                 if (!string.IsNullOrEmpty(addPlan.Category))
                     multipart.Add(new StringContent(addPlan.Category), "category");
+
                 if (!string.IsNullOrEmpty(addPlan.Tags))
                     multipart.Add(new StringContent(addPlan.Tags), "tags");
 
-                var torrentFileName = string.IsNullOrEmpty(addPlan.FileName) ? "download.torrent" : addPlan.FileName;
+                if (addPlan.PauseForInspection)
+                    multipart.Add(new StringContent("true"), "paused");
+
+                if (addPlan.StopAfterMetadata)
+                    multipart.Add(new StringContent("MetadataReceived"), "stopCondition");
+
+                var torrentFileName = string.IsNullOrEmpty(addPlan.FileName)
+                    ? "download.torrent"
+                    : addPlan.FileName;
+
                 var torrentContent = new ByteArrayContent(addPlan.TorrentFileData);
-                torrentContent.Headers.ContentType = new MediaTypeHeaderValue("application/x-bittorrent");
+                torrentContent.Headers.ContentType =
+                    new MediaTypeHeaderValue("application/x-bittorrent");
+
                 multipart.Add(torrentContent, "torrents", torrentFileName);
+
                 return multipart;
             }
 
@@ -50,8 +65,15 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
             if (!string.IsNullOrEmpty(addPlan.Category))
                 formData.Add(new("category", addPlan.Category));
+
             if (!string.IsNullOrEmpty(addPlan.Tags))
                 formData.Add(new("tags", addPlan.Tags));
+
+            if (addPlan.PauseForInspection)
+                formData.Add(new("paused", "true"));
+
+            if (addPlan.StopAfterMetadata)
+                formData.Add(new("stopCondition", "MetadataReceived"));
 
             return new FormUrlEncodedContent(formData);
         }

@@ -7,6 +7,8 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+using System.Text.Json;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
@@ -14,6 +16,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
     internal sealed class QbittorrentAddWorkflow(
         IHttpClientFactory httpClientFactory,
         QbittorrentAuthSession authSession,
+        QbittorrentRemovalWorkflow removalWorkflow,
         ILogger<QbittorrentAdapter> logger,
         string clientType)
     {
@@ -58,6 +61,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             logger.LogInformation("Successfully sent torrent to qBittorrent");
 
             await Task.Delay(1000, ct);
+            await ValidatePayloadAndStartAsync(httpClient, baseUrl, client, addPlan, ct);
 
             // qBittorrent can accept a torrent while failing to register private tracker
             // URLs from the file. Keep this explicit fallback in the add workflow so the
@@ -69,7 +73,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     var trackerAnnounces = torrent.TrackerUrls.Where(a =>
                         a.Contains("/announce", StringComparison.OrdinalIgnoreCase) ||
                         a.Contains("/tracker", StringComparison.OrdinalIgnoreCase)).ToList();
-                    if (trackerAnnounces != null && trackerAnnounces.Count > 0)
+                    if (trackerAnnounces.Count > 0)
                     {
                         var trackerUrls = string.Join("\n", trackerAnnounces.Distinct());
                         using var addTrackersData = new FormUrlEncodedContent(new[]
@@ -91,6 +95,108 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             }
 
             return new DownloadClientSubmissionResult(addPlan.Hash, addPlan.Hash);
+        }
+
+        private async Task ValidatePayloadAndStartAsync(
+            HttpClient httpClient,
+            string baseUrl,
+            DownloadClientConfiguration client,
+            QbittorrentTorrentAddPlan addPlan,
+            CancellationToken ct)
+        {
+            var files = await FetchTorrentFilesForInspectionAsync(httpClient, baseUrl, addPlan.Hash, ct);
+            if (files.Count == 0)
+            {
+                await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
+                throw new DownloadClientSubmissionException("qBittorrent did not expose torrent payload metadata for inspection.");
+            }
+
+            if (!files.Any(IsAudioPayloadFile))
+            {
+                logger.LogInformation(
+                    "Rejected qBittorrent torrent {Hash} because its payload did not contain audio files",
+                    LogRedaction.SanitizeText(addPlan.Hash));
+                await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
+                throw new DownloadClientSubmissionException("qBittorrent torrent payload does not contain any supported audio files.");
+            }
+
+            await StartTorrentAsync(httpClient, baseUrl, addPlan.Hash, ct);
+        }
+
+        private static async Task<List<Dictionary<string, JsonElement>>> FetchTorrentFilesForInspectionAsync(
+            HttpClient httpClient,
+            string baseUrl,
+            string hash,
+            CancellationToken ct)
+        {
+            for (var attempt = 0; attempt < 10; attempt++)
+            {
+                using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={Uri.EscapeDataString(hash)}", ct);
+                if (!filesResp.IsSuccessStatusCode)
+                {
+                    return [];
+                }
+
+                var filesJson = await filesResp.Content.ReadAsStringAsync(ct);
+                var files = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filesJson) ?? [];
+                if (files.Count > 0)
+                {
+                    return files;
+                }
+
+                await Task.Delay(500, ct);
+            }
+
+            return [];
+        }
+
+        private static bool IsAudioPayloadFile(Dictionary<string, JsonElement> file)
+        {
+            if (!file.TryGetValue("name", out var nameElement))
+            {
+                return false;
+            }
+
+            var name = nameElement.GetString();
+            return !string.IsNullOrWhiteSpace(name) && FileUtils.IsAudioFile(name);
+        }
+
+        private async Task StartTorrentAsync(HttpClient httpClient, string baseUrl, string hash, CancellationToken ct)
+        {
+            using var resumeContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("hashes", hash)
+            });
+            using var resumeResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/resume", resumeContent, ct);
+            if (resumeResponse.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            using var startContent = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("hashes", hash)
+            });
+            using var startResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/start", startContent, ct);
+            if (!startResponse.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "qBittorrent accepted torrent {Hash} but could not start it after payload validation. Status: {Status}",
+                    LogRedaction.SanitizeText(hash),
+                    startResponse.StatusCode);
+                throw new DownloadClientSubmissionException("qBittorrent accepted the torrent but could not start it after payload validation.");
+            }
+        }
+
+        private async Task RemoveRejectedTorrentAsync(DownloadClientConfiguration client, string hash, CancellationToken ct)
+        {
+            var removed = await removalWorkflow.RemoveAsync(client, hash, deleteFiles: true, ct);
+            if (!removed)
+            {
+                logger.LogWarning(
+                    "Failed to remove rejected qBittorrent torrent {Hash} after payload validation",
+                    LogRedaction.SanitizeText(hash));
+            }
         }
     }
 }

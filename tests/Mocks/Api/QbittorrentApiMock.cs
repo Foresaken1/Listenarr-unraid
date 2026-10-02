@@ -10,8 +10,10 @@ namespace Listenarr.Tests.Mocks.Api
         public bool Authenticated { get; set; } = false;
         public NameValueCollection? LastDeleteForm { get; private set; }
         public NameValueCollection? LastCategoryForm { get; private set; }
+        public NameValueCollection? LastResumeForm { get; private set; }
         public HttpStatusCode InfoStatusCode { get; set; } = HttpStatusCode.OK;
         public string? InfoResponseOverride { get; set; }
+        public string? FilesResponseOverride { get; set; }
 
         public QbittorrentApiMock()
         {
@@ -21,6 +23,8 @@ namespace Listenarr.Tests.Mocks.Api
             AddRoute("api/v2/torrents/info", GetInfo, HttpMethod.Get);
             AddRoute("api/v2/torrents/files", GetFiles, HttpMethod.Get);
             AddRoute("api/v2/torrents/delete", DoDelete, HttpMethod.Post);
+            AddRoute("api/v2/torrents/resume", DoResume, HttpMethod.Post);
+            AddRoute("api/v2/torrents/start", DoResume, HttpMethod.Post);
             AddRoute("api/v2/torrents/setCategory", SetCategory, HttpMethod.Post);
         }
 
@@ -88,7 +92,11 @@ namespace Listenarr.Tests.Mocks.Api
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
             }
 
-            return MockUtils.GetCannedResponse("[]");
+            return MockUtils.GetCannedResponse(FilesResponseOverride ?? """
+            [
+                { "name": "Book.m4b" }
+            ]
+            """);
         }
 
         private async Task<HttpResponseMessage> GetVersion(HttpRequestMessage request, CancellationToken ct)
@@ -105,6 +113,13 @@ namespace Listenarr.Tests.Mocks.Api
         {
             if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
             LastDeleteForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
+            return MockUtils.GetCannedResponse("Ok");
+        }
+
+        private async Task<HttpResponseMessage> DoResume(HttpRequestMessage request, CancellationToken ct)
+        {
+            if (!Authenticated) return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            LastResumeForm = HttpUtility.ParseQueryString(await request.Content!.ReadAsStringAsync(ct));
             return MockUtils.GetCannedResponse("Ok");
         }
 

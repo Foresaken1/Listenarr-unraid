@@ -424,6 +424,62 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
+        public async Task AddAsync_WhenTorrentPayloadContainsAudio_StartsTorrentAfterInspection()
+        {
+            var filePath = TestUtils.GetTorrentDataPath("big-buck-bunny.torrent");
+            var content = await File.ReadAllBytesAsync(filePath);
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.FilesResponseOverride = """
+            [
+                { "name": "Book/cover.jpg" },
+                { "name": "Book/chapter01.m4b" }
+            ]
+            """;
+
+            var searchResult = new SearchResultBuilder()
+                .WithTorrentData(content)
+                .Build();
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            var submissionResult = await adapter.AddAsync(
+                _client,
+                PreparedSubmissionTestFactory.Torrent(searchResult));
+
+            Assert.Equal("DD8255ECDC7CA55FB0BBF81323D87062DB1F6D1C", submissionResult.ExternalId);
+            Assert.Null(apiMock.LastDeleteForm);
+            Assert.NotNull(apiMock.LastResumeForm);
+            Assert.Equal("DD8255ECDC7CA55FB0BBF81323D87062DB1F6D1C", apiMock.LastResumeForm!["hashes"]);
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenTorrentPayloadContainsOnlyDocuments_RemovesTorrentAndRejectsSubmission()
+        {
+            var filePath = TestUtils.GetTorrentDataPath("big-buck-bunny.torrent");
+            var content = await File.ReadAllBytesAsync(filePath);
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.FilesResponseOverride = """
+            [
+                { "name": "Book/book.epub" },
+                { "name": "Book/book.pdf" }
+            ]
+            """;
+
+            var searchResult = new SearchResultBuilder()
+                .WithTorrentData(content)
+                .Build();
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            var exception = await Assert.ThrowsAsync<DownloadClientSubmissionException>(() => adapter.AddAsync(
+                _client,
+                PreparedSubmissionTestFactory.Torrent(searchResult)));
+
+            Assert.Contains("audio", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Null(apiMock.LastResumeForm);
+            Assert.NotNull(apiMock.LastDeleteForm);
+            Assert.Equal("DD8255ECDC7CA55FB0BBF81323D87062DB1F6D1C", apiMock.LastDeleteForm!["hashes"]);
+            Assert.Equal("true", apiMock.LastDeleteForm["deleteFiles"]);
+        }
+        [Fact]
         public async Task GetQueueAsync_WithIds_AddsHashesQuery()
         {
             var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();

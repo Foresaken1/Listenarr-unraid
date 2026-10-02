@@ -7,8 +7,6 @@
  * by the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-
-
 namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent;
 
 internal static class QbittorrentTorrentAddPlanner
@@ -31,7 +29,10 @@ internal static class QbittorrentTorrentAddPlanner
             tags,
             submission.TorrentBytes,
             submission.MagnetUri,
-            submission.FileName);
+            submission.FileName,
+            PauseForInspection: submission.TorrentBytes != null,
+            StopAfterMetadata: submission.TorrentBytes == null &&
+                               !string.IsNullOrWhiteSpace(submission.MagnetUri));
     }
 }
 
@@ -42,4 +43,6 @@ internal sealed record QbittorrentTorrentAddPlan(
     string? Tags,
     byte[]? TorrentFileData,
     string? MagnetLink,
-    string? FileName);
+    string? FileName,
+    bool PauseForInspection,
+    bool StopAfterMetadata);
