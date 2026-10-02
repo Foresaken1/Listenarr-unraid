@@ -43,7 +43,8 @@ public sealed class FileRegistrationRecoveryProbe(
             .AsNoTracking()
             .Where(journal =>
                 journal.AudiobookFileId == null
-                && journal.State != FileMutationJournalState.Completed)
+                && journal.State != FileMutationJournalState.Completed
+                && journal.State != FileMutationJournalState.NeedsAttention)
             .Select(journal => new
             {
                 journal.SourcePath,
