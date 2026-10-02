@@ -262,6 +262,16 @@
         <div v-if="isAuthorCollection" class="author-monitoring-controls">
           <div class="author-monitoring-actions">
             <button
+              class="toolbar-btn author-scan-btn"
+              :disabled="authorLibraryScanBusy"
+              @click="scanAuthorLibrary"
+              title="Scan all library audiobooks for this author"
+             >
+              <PhArrowClockwise v-if="authorLibraryScanBusy" class="spin-icon" />
+              <PhArrowClockwise v-else />
+               Scan Author Library
+             </button>
+            <button
               class="toolbar-btn author-refresh-btn"
               :disabled="authorMetadataRefreshBusy"
               @click="refreshAuthorMetadata"
@@ -886,6 +896,7 @@ const authorLookup = ref<AuthorLookupResponse | null>(null)
 const authorLookupLoading = ref(false)
 const authorLookupRequestId = ref(0)
 const authorMetadataRefreshBusy = ref(false)
+const authorLibraryScanBusy = ref(false)
 const seriesCatalog = ref<SeriesCatalogResponse | null>(null)
 const seriesCatalogLoading = ref(false)
 const seriesCatalogError = ref<string | null>(null)
@@ -1888,6 +1899,60 @@ async function confirmBulkDelete() {
 const refreshLibrary = async () => {
   libraryStore.clearSelection()
   await loadCollectionData(true)
+}
+
+async function scanAuthorLibrary() {
+  if (!isAuthorCollection.value || authorLibraryScanBusy.value) return
+
+  const books = libraryCollectionAudiobooks.value
+
+  if (books.length === 0) {
+    toast.warning(
+      'Nothing to scan',
+      'There are no audiobooks from this author currently in the library.',
+    )
+    return
+  }
+
+  authorLibraryScanBusy.value = true
+
+  let started = 0
+  let failed = 0
+
+  try {
+    for (const book of books) {
+      try {
+        await apiService.scanAudiobook(book.id)
+        started += 1
+      } catch (err) {
+        failed += 1
+
+        errorTracking.captureException(err as Error, {
+          component: 'CollectionView',
+          operation: 'scanAuthorLibrary',
+          metadata: {
+            author: name.value,
+            audiobookId: book.id,
+            audiobookTitle: book.title,
+          },
+        })
+      }
+    }
+
+    if (failed === 0) {
+      toast.success(
+        'Author library scan started',
+        `Started scans for ${started} audiobook${started !== 1 ? 's' : ''}.`,
+      )
+    } else {
+      toast.warning(
+        'Author library scan partially started',
+        `Started ${started} scan${started !== 1 ? 's' : ''}; ${failed} could not be started.`,
+      )
+    }
+  } finally {
+    authorLibraryScanBusy.value = false
+  }
 }
 
 async function refreshAuthorMetadata() {
