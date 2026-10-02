@@ -44,7 +44,7 @@
         :modelValue="settings.showCompletedExternalDownloads"
         @update:modelValue="updateShowCompletedExternalDownloads"
         title="Show completed external downloads in Activity"
-        description="When enabled, completed torrents/NZBs from external clients will remain visible in the Activity view. When disabled, completed external items will be hidden to reduce clutter."
+        description="Keep completed downloads from external clients visible in Activity. Unmatched completed qBittorrent torrents can be imported from there."
       />
     </div>
   </div>

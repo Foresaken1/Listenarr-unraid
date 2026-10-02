@@ -84,6 +84,9 @@
               item.eta,
               item.downloadSpeed,
               item.downloadClient,
+              item.downloadClientType,
+              item.audiobookId,
+              item.localPath,
             ]"
             class="queue-row"
           >
@@ -139,6 +142,15 @@
               </span>
             </div>
             <div class="col-actions">
+              <button
+                v-if="canImportExternalTorrent(item)"
+                class="btn-icon"
+                @click="openExternalTorrentImport(item)"
+                title="Import files from this completed qBittorrent torrent"
+                aria-label="Import torrent files"
+              >
+                <PhDownloadSimple />
+              </button>
               <button
                 v-if="item.canRemove"
                 class="btn-icon btn-danger-icon"
@@ -231,6 +243,14 @@
         </div>
       </div>
     </div>
+
+    <ManualImportModal
+      v-if="showExternalImportModal"
+      :is-open="showExternalImportModal"
+      :initial-path="externalImportPath"
+      @close="showExternalImportModal = false"
+      @imported="refreshAfterExternalImport"
+    />
   </div>
 </template>
 
@@ -248,6 +268,7 @@ import {
   PhChartBar,
   PhTrash,
   PhMagnifyingGlass,
+  PhDownloadSimple,
 } from '@phosphor-icons/vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
@@ -260,6 +281,7 @@ import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
+import ManualImportModal from '@/components/feedback/ManualImportModal.vue'
 
 const downloadsStore = useDownloadsStore()
 const libraryStore = useLibraryStore()
@@ -274,6 +296,8 @@ const showRemoveModal = ref(false)
 const clientHasQueueEntry = ref<boolean | null>(null)
 const itemToRemove = ref<QueueItem | null>(null)
 const removing = ref(false)
+const showExternalImportModal = ref(false)
+const externalImportPath = ref('')
 let unsubscribeQueue: (() => void) | null = null
 let queueRefreshInterval: ReturnType<typeof setInterval> | null = null
 
@@ -663,6 +687,23 @@ const removeFromQueue = async (item: QueueItem) => {
   const found = queue.value.some((q) => q.id === item.id)
   clientHasQueueEntry.value = found
   showRemoveModal.value = true
+}
+
+const canImportExternalTorrent = (item: QueueItem) =>
+  item.downloadClientType?.toLowerCase() === 'qbittorrent' &&
+  item.status?.toLowerCase() === 'completed' &&
+  !item.audiobookId &&
+  Boolean(item.localPath)
+
+const openExternalTorrentImport = (item: QueueItem) => {
+  if (!canImportExternalTorrent(item) || !item.localPath) return
+  externalImportPath.value = item.localPath
+  showExternalImportModal.value = true
+}
+
+const refreshAfterExternalImport = async () => {
+  showExternalImportModal.value = false
+  await Promise.all([libraryStore.fetchLibrary(), refreshQueue()])
 }
 
 const confirmRemove = async () => {

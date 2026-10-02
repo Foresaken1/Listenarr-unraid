@@ -38,6 +38,7 @@ type ActivityViewVm = {
   queueHealthClients: Array<{ name: string; isUnavailable?: boolean }>
   removeFromQueue: (item: ActivityItem) => Promise<void> | void
   confirmRemove: () => Promise<void>
+  openExternalTorrentImport: (item: ActivityItem) => void
 }
 
 const mockSignalR = () => {
@@ -114,6 +115,11 @@ const mountActivityView = async () => {
     global: {
       stubs: {
         CustomSelect: true,
+        ManualImportModal: {
+          props: ['isOpen', 'initialPath'],
+          template:
+            '<div data-test="manual-import-modal" :data-open="isOpen" :data-path="initialPath" />',
+        },
         RouterLink: { template: '<a><slot /></a>' },
       },
     },
@@ -267,6 +273,38 @@ describe('ActivityView', () => {
 
     expect(vm.filteredQueue).toHaveLength(1)
     expect(vm.filteredQueue[0]?.id).toBe('d2')
+  })
+
+  it('offers import for unmatched completed qBittorrent torrents', async () => {
+    const torrent = {
+      id: 'torrent-hash',
+      title: 'Chuck Palahniuk Fight Club (Unabridged)',
+      status: 'completed',
+      progress: 100,
+      size: 1000,
+      downloaded: 1000,
+      downloadClientId: 'qbittorrent',
+      downloadClient: 'qBittorrent',
+      downloadClientType: 'qbittorrent',
+      localPath: '/data/torrents/audiobooks/Chuck Palahniuk Fight Club',
+      canRemove: true,
+    }
+
+    mockSignalR()
+    mockApi({ getQueue: vi.fn(async () => [torrent]) })
+    mockConfigurationStore(true)
+    mockLibraryStore()
+    mockDownloadsStore()
+
+    const wrapper = await mountActivityView()
+    const importButton = wrapper.find('button[aria-label="Import torrent files"]')
+
+    expect(importButton.exists()).toBe(true)
+    await importButton.trigger('click')
+
+    const modal = wrapper.get('[data-test="manual-import-modal"]')
+    expect(modal.attributes('data-open')).toBe('true')
+    expect(modal.attributes('data-path')).toBe(torrent.localPath)
   })
 
   it('removes a queue-backed item from the client', async () => {

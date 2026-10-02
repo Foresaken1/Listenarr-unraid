@@ -23,6 +23,10 @@
 
     <template #default>
       <ModalBody :class="{ 'browser-mode': browserMode }">
+        <div v-if="importError" class="import-error" role="alert">
+          {{ importError }}
+        </div>
+
         <!-- Recent folders (session storage) -->
         <div v-if="!showPreview && recentFolders.length > 0" class="recent-folders">
           <div class="recent-title">Recent folders</div>
@@ -362,6 +366,7 @@ const emit = defineEmits(['close', 'imported'] as const)
 
 const selectedPath = ref(props.initialPath || '')
 const loading = ref(false)
+const importError = ref('')
 const browserMode = ref(false)
 const inputField = ref<string>('')
 const action = ref<'move' | 'hardlink/copy' | ''>('')
@@ -627,6 +632,34 @@ watch(
   },
 )
 
+watch(
+  () => props.initialPath,
+  (path) => {
+    if (path) {
+      selectedPath.value = path
+      importError.value = ''
+    }
+  },
+)
+
+const getImportErrorMessage = (error: unknown) => {
+  const message = error instanceof Error ? error.message : ''
+  const jsonStart = message.indexOf('{')
+  if (jsonStart >= 0) {
+    try {
+      const body = JSON.parse(message.slice(jsonStart)) as {
+        message?: string
+        error?: string
+        detail?: string
+      }
+      return body.message || body.error || body.detail || message
+    } catch {
+      // Preserve the original API error when the response body is not JSON.
+    }
+  }
+  return message || 'Import failed. Check the Listenarr logs for details.'
+}
+
 watch(selectedPath, async (v) => {
   // only load preview automatically when interactive flow is active
   if (props.isOpen && v && showPreview.value) await loadPreview()
@@ -637,6 +670,7 @@ watch(selectedPath, async (v) => {
 const loadPreview = async () => {
   if (!selectedPath.value) return
   loading.value = true
+  importError.value = ''
   try {
     const resp = await apiService.previewManualImport(selectedPath.value)
     // resp.items expected to be an array of detected files with metadata
@@ -671,6 +705,7 @@ const loadPreview = async () => {
     })
   } catch (err) {
     console.error('Failed to preview import:', err)
+    importError.value = getImportErrorMessage(err)
     previewItems.value = []
   } finally {
     loading.value = false
@@ -692,11 +727,16 @@ const startAutomaticImport = async () => {
     const autoPayload: ManualImportRequest = { path: selectedPath.value, mode: 'automatic' }
     if (action.value !== '') autoPayload.action = action.value
     const resp = await apiService.startManualImport(autoPayload)
+    if (resp.importedCount === 0) {
+      const failure = resp.results?.find((result) => !result.success)
+      importError.value = failure?.error || failure?.skipReason || 'No files were imported.'
+      return
+    }
     // resp should contain import summary
     emit('imported', { imported: resp.importedCount ?? 0 })
-    close()
   } catch (err) {
     console.error('Automatic import failed:', err)
+    importError.value = getImportErrorMessage(err)
   } finally {
     loading.value = false
   }
@@ -714,6 +754,7 @@ const importSelected = async () => {
   const selected = previewItems.value.filter((i) => i.selected)
   if (selected.length === 0) return
   loading.value = true
+  importError.value = ''
   try {
     // Map items to the payload the backend expects and ensure required fields are present
     const payloadItems = selected
@@ -735,10 +776,15 @@ const importSelected = async () => {
       action: action.value || 'hardlink/copy',
     }
     const resp = await apiService.startManualImport(manualPayload)
+    if (resp.importedCount === 0) {
+      const failure = resp.results?.find((result) => !result.success)
+      importError.value = failure?.error || failure?.skipReason || 'No files were imported.'
+      return
+    }
     emit('imported', { imported: resp.importedCount ?? selected.length })
-    close()
   } catch (err) {
     console.error('Manual import failed:', err)
+    importError.value = getImportErrorMessage(err)
   } finally {
     loading.value = false
   }
@@ -748,6 +794,7 @@ const close = () => {
   // reset preview state when closing
   showPreview.value = false
   previewItems.value = []
+  importError.value = ''
   emit('close')
 }
 
@@ -1017,6 +1064,16 @@ const getItemIssues = (item: PreviewItem): string[] => {
   gap: 0.5rem;
   padding: 2rem;
   color: #ccc;
+}
+
+.import-error {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-danger, #ef4444);
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-danger, #ef4444);
+  overflow-wrap: anywhere;
 }
 
 /* Empty state */
