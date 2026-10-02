@@ -198,6 +198,30 @@ public sealed class RootFolderStorageConfirmationServiceTests : BaseTests
     }
 
     [Fact]
+    public async Task ConfirmCurrentFolderAsync_NeedsAttentionRegistrationRecoveryDoesNotBlockReplacement()
+    {
+        var fixture = await CreateFixtureAsync("confirm-needs-attention-registration-recovery");
+        await using var cleanup = fixture;
+        var initialRoot = await fixture.ConfirmInitialGenerationAsync();
+        await fixture.AddRegistrationRecoveryAsync(FileMutationJournalState.NeedsAttention);
+        fixture.ReplaceVisibleRoot();
+
+        var changedRoot = await fixture.LoadRootAsync();
+        var observation = await fixture.HealthResolver.ResolveAsync(changedRoot);
+        Assert.Equal(RootFolderStorageState.Changed, observation.State);
+
+        var confirmed = await fixture.Service.ConfirmCurrentFolderAsync(
+            changedRoot.Id,
+            changedRoot.Path,
+            observation.ConfirmationToken!);
+
+        Assert.Equal(ManagedDirectoryIdentity.CurrentVersion, confirmed.DirectoryObjectIdentityVersion);
+        Assert.NotEqual(initialRoot.DirectoryObjectIdentity, confirmed.DirectoryObjectIdentity);
+        Assert.Equal(RootFolderStorageState.Healthy,
+            (await fixture.HealthResolver.ResolveAsync(await fixture.LoadRootAsync())).State);
+    }
+
+    [Fact]
     public async Task ConfirmCurrentFolderAsync_AnonymousRegistrationPublicationUnderRoot_BlocksBeforeAuthorization()
     {
         var fixture = await CreateFixtureAsync("confirm-anonymous-registration-recovery");
@@ -767,6 +791,9 @@ public sealed class RootFolderStorageConfirmationServiceTests : BaseTests
             new(dbFactory, TimeProvider.System);
 
         public async Task AddRegistrationRecoveryAsync()
+            => await AddRegistrationRecoveryAsync(FileMutationJournalState.SourceDeletionAuthorized);
+
+        public async Task AddRegistrationRecoveryAsync(FileMutationJournalState state)
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             db.Audiobooks.Add(new Audiobook
@@ -784,7 +811,7 @@ public sealed class RootFolderStorageConfirmationServiceTests : BaseTests
                 SourcePhysicalObjectIdentity = "source-generation",
                 TargetPhysicalObjectIdentity = "target-generation",
                 SourceLength = 1,
-                State = FileMutationJournalState.SourceDeletionAuthorized,
+                State = state,
                 AudiobookId = 42,
                 AudiobookFileId = null
             });

@@ -277,10 +277,13 @@ internal sealed class RootFolderStorageConfirmationService(
         var activeMutationJournals = await db.FileMutationJournals
             .AsNoTracking()
             .Where(journal =>
+                // NeedsAttention journals are quarantined and cannot resume filesystem work.
                 (journal.AudiobookFileId == null
-                    && journal.State != FileMutationJournalState.Completed)
+                    && journal.State != FileMutationJournalState.Completed
+                    && journal.State != FileMutationJournalState.NeedsAttention)
                 || (journal.AudiobookId != null
                     && journal.AudiobookFileId != null
+                    && journal.State != FileMutationJournalState.NeedsAttention
                     && (journal.AudiobookFileId == FileMutationOwner.CompanionFile
                         || journal.AudiobookFileId
                             == FileMutationOwner.RegistrationCompanionFile
