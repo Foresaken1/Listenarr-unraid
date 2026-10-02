@@ -693,6 +693,14 @@ class ApiService {
     return this.request<Download>(`/downloads/${id}`)
   }
 
+  async retryBlockedImport(
+    id: string,
+  ): Promise<{ message: string; id: string; jobId: string; status: string }> {
+    return this.request(`/downloads/${id}/retry-import`, {
+      method: 'POST',
+    })
+  }
+
   async startDownload(searchResult: SearchResult, downloadClientId: string): Promise<string> {
     return this.request<string>('/downloads', {
       method: 'POST',

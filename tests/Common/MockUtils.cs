@@ -143,6 +143,7 @@ namespace Listenarr.Tests.Common
             return new DownloadsController(
                 provider.GetRequiredService<IDownloadRepository>(),
                 provider.GetRequiredService<IDownloadService>(),
+                provider.GetRequiredService<IDownloadProcessingJobService>(),
                 provider.GetRequiredService<ILogger<DownloadsController>>(),
                 provider.GetRequiredService<IConfigurationService>(),
                 provider.GetRequiredService<IMemoryCache>());

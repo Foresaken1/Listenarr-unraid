@@ -147,6 +147,16 @@
                 </button>
 
                 <button
+                  v-if="download.status === 'ImportBlocked'"
+                  @click="retryBlockedImport(download)"
+                  :disabled="retryingDownloadId === download.id"
+                  class="action-button retry"
+                >
+                  <PhArrowClockwise :size="16" />
+                  {{ retryingDownloadId === download.id ? 'Retrying...' : 'Retry Import' }}
+                </button>
+
+                <button
                   v-if="download.finalPath"
                   @click="openFolder(download.finalPath)"
                   class="action-button open btn"
@@ -184,7 +194,7 @@ import type { Download } from '@/types'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import { logger } from '@/utils/logger'
-import { PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
+import { PhArrowClockwise, PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
 import InspectTorrentModal from '@/components/domain/download/InspectTorrentModal.vue'
 import { apiService } from '@/services/api'
 import { EmptyState, ProgressBar } from '@/components/base'
@@ -192,6 +202,7 @@ import { EmptyState, ProgressBar } from '@/components/base'
 const downloadsStore = useDownloadsStore()
 const toast = useToast()
 const activeTab = ref<'active' | 'completed' | 'failed'>('active')
+const retryingDownloadId = ref<string | null>(null)
 
 const mobileTabOptions = computed(() => [
   { value: 'active', label: 'Active', icon: PhDownloadSimple },
@@ -303,6 +314,24 @@ const cancelDownload = async (downloadId: string) => {
       metadata: { downloadId },
     })
     toast.error('Error', 'Failed to cancel download')
+  }
+}
+
+const retryBlockedImport = async (download: Download) => {
+  retryingDownloadId.value = download.id
+  try {
+    await apiService.retryBlockedImport(download.id)
+    await refreshDownloads()
+    toast.success('Import queued', `${download.title} will be retried`)
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'DownloadsView',
+      operation: 'retryBlockedImport',
+      metadata: { downloadId: download.id },
+    })
+    toast.error('Retry failed', `Could not retry import for ${download.title}`)
+  } finally {
+    retryingDownloadId.value = null
   }
 }
 

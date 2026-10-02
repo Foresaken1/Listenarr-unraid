@@ -110,4 +110,73 @@ describe('DownloadsView mobile virtualization', () => {
 
     wrapper.unmount()
   })
+
+  it('queues a retry for a blocked import and refreshes downloads', async () => {
+    const blockedDownload = {
+      id: 'download-blocked',
+      title: 'Fight Club',
+      artist: 'Chuck Palahniuk',
+      album: '',
+      status: 'ImportBlocked',
+      progress: 100,
+      totalSize: 1024,
+      downloadedSize: 1024,
+      downloadClientId: 'qbittorrent',
+      startedAt: new Date().toISOString(),
+      finalPath: '',
+      errorMessage: 'Import blocked',
+    }
+    const loadDownloads = vi.fn(async () => undefined)
+    const retryBlockedImport = vi.fn(async () => ({
+      message: 'Import retry queued',
+      id: blockedDownload.id,
+      jobId: 'job-1',
+      status: 'Completed',
+    }))
+    const success = vi.fn()
+
+    vi.doMock('@/stores/downloads', () => ({
+      useDownloadsStore: () => ({
+        isLoading: false,
+        activeDownloads: [],
+        completedDownloads: [],
+        failedDownloads: [blockedDownload],
+        loadDownloads,
+        cancelDownload: vi.fn(async () => undefined),
+      }),
+    }))
+    vi.doMock('@/services/toastService', () => ({
+      useToast: () => ({ success, error: vi.fn(), info: vi.fn() }),
+    }))
+    vi.doMock('@/services/errorTracking', () => ({
+      errorTracking: { captureException: vi.fn() },
+    }))
+    vi.doMock('@/utils/logger', () => ({ logger: { warn: vi.fn() } }))
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getCachedAnnounces: vi.fn(async () => ({ announces: [] })),
+        retryBlockedImport,
+      },
+    }))
+
+    const { default: DownloadsView } = await import('@/views/activity/DownloadsView.vue')
+    const wrapper = mount(DownloadsView, {
+      global: {
+        stubs: {
+          CustomSelect: true,
+          EmptyState: true,
+          ProgressBar: true,
+          InspectTorrentModal: true,
+        },
+      },
+    })
+
+    await wrapper.get('.tab-button:nth-child(3)').trigger('click')
+    await wrapper.get('.action-button.retry').trigger('click')
+
+    expect(retryBlockedImport).toHaveBeenCalledWith(blockedDownload.id)
+    expect(loadDownloads).toHaveBeenCalled()
+    expect(success).toHaveBeenCalledWith('Import queued', 'Fight Club will be retried')
+    wrapper.unmount()
+  })
 })

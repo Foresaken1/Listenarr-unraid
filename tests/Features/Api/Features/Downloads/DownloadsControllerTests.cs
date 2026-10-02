@@ -253,8 +253,8 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
 
         [Fact]
         [Trait("Method", "RetryBlockedImport")]
-        [Trait("Scenario", "RetryBlockedImportResetsToImportPending")]
-        public async Task RetryBlockedImport_ImportBlocked_TransitionsToImportPending()
+        [Trait("Scenario", "RetryBlockedImportQueuesProcessingJob")]
+        public async Task RetryBlockedImport_ImportBlocked_QueuesProcessingJob()
         {
             await _downloadRepository.AddAsync(new DownloadBuilder()
                 .WithId("d-retry")
@@ -271,14 +271,20 @@ namespace Listenarr.Tests.Features.Api.Features.Downloads
             Assert.NotNull(ok.Value);
 
             var status = ok.Value!.GetType().GetProperty("status")?.GetValue(ok.Value)?.ToString();
-            Assert.Equal("ImportPending", status);
+            Assert.Equal("Completed", status);
 
             var updated = await _downloadRepository.GetByIdAsync("d-retry");
             Assert.NotNull(updated);
-            Assert.Equal(DownloadStatus.ImportPending, updated!.Status);
+            Assert.Equal(DownloadStatus.Completed, updated!.Status);
             Assert.Null(updated.ImportBlockReason);
             Assert.Null(updated.ImportBlockMessages);
             Assert.Equal(0, updated.ImportAttempts);
+
+            var jobs = await _provider
+                .GetRequiredService<IDownloadProcessingJobService>()
+                .GetJobsForDownloadAsync("d-retry");
+            var job = Assert.Single(jobs);
+            Assert.Equal(ProcessingJobStatus.Pending, job.Status);
         }
 
         [Fact]
