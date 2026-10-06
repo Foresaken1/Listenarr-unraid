@@ -129,7 +129,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             string hash,
             CancellationToken ct)
         {
-            for (var attempt = 0; attempt < 10; attempt++)
+            // Magnet links may need time to fetch metadata from peers before qBittorrent
+            // can expose the torrent file list. Wait up to about 60 seconds before
+            // treating missing payload metadata as a validation failure.
+            for (var attempt = 0; attempt < 60; attempt++)
             {
                 using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={Uri.EscapeDataString(hash)}", ct);
                 if (!filesResp.IsSuccessStatusCode)
@@ -144,7 +147,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     return files;
                 }
 
-                await Task.Delay(500, ct);
+                await Task.Delay(1000, ct);
             }
 
             return [];
