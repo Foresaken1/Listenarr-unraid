@@ -136,6 +136,14 @@ namespace Listenarr.Application.Downloads.Queue
                                 // that we already proved belongs to Listenarr.
                                 queueItem.Id = matchedDownload.Id;
 
+                                // Transfer completion does not imply successful library import.
+                                if (matchedDownload.Status is DownloadStatus.ImportBlocked or
+                                    DownloadStatus.ImportPending or DownloadStatus.Processing or DownloadStatus.Moved)
+                                {
+                                    queueItem.Status = ToQueueStatus(matchedDownload.Status);
+                                    queueItem.ErrorMessage = matchedDownload.ErrorMessage;
+                                }
+
                                 await PersistDiscoveredClientIdentifiersAsync(matchedDownload, client, originalClientId, allKnownClientItemIds);
 
                                 if (!string.IsNullOrWhiteSpace(matchedDownload.Title))

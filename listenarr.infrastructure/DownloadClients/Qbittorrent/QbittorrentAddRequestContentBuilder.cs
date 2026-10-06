@@ -37,7 +37,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     multipart.Add(new StringContent(addPlan.Tags), "tags");
 
                 if (addPlan.PauseForInspection)
+                {
                     multipart.Add(new StringContent("true"), "paused");
+                    multipart.Add(new StringContent("true"), "stopped");
+                }
 
                 if (addPlan.StopAfterMetadata)
                     multipart.Add(new StringContent("MetadataReceived"), "stopCondition");
@@ -70,7 +73,10 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 formData.Add(new("tags", addPlan.Tags));
 
             if (addPlan.PauseForInspection)
+            {
                 formData.Add(new("paused", "true"));
+                formData.Add(new("stopped", "true"));
+            }
 
             if (addPlan.StopAfterMetadata)
                 formData.Add(new("stopCondition", "MetadataReceived"));

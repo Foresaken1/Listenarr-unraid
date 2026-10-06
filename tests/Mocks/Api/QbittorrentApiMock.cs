@@ -12,6 +12,8 @@ namespace Listenarr.Tests.Mocks.Api
         public NameValueCollection? LastCategoryForm { get; private set; }
         public NameValueCollection? LastResumeForm { get; private set; }
         public HttpStatusCode InfoStatusCode { get; set; } = HttpStatusCode.OK;
+        public HttpStatusCode AddStatusCode { get; set; } = HttpStatusCode.OK;
+        public Queue<string> InfoResponseSequence { get; } = new();
         public string? InfoResponseOverride { get; set; }
         public string? FilesResponseOverride { get; set; }
 
@@ -55,6 +57,9 @@ namespace Listenarr.Tests.Mocks.Api
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
             }
 
+            if (AddStatusCode != HttpStatusCode.OK)
+                return new HttpResponseMessage(AddStatusCode) { Content = new StringContent("Conflict") };
+
             return MockUtils.GetCannedResponse("Ok");
         }
 
@@ -69,6 +74,9 @@ namespace Listenarr.Tests.Mocks.Api
             {
                 return new HttpResponseMessage(InfoStatusCode);
             }
+
+            if (InfoResponseSequence.TryDequeue(out var infoResponse))
+                return MockUtils.GetCannedResponse(infoResponse);
 
             return MockUtils.GetCannedResponse(InfoResponseOverride ?? """
             [

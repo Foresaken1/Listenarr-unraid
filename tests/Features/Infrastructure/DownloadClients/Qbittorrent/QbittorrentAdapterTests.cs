@@ -513,6 +513,69 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
             Assert.Equal("DD8255ECDC7CA55FB0BBF81323D87062DB1F6D1C", apiMock.LastDeleteForm!["hashes"]);
             Assert.Equal("true", apiMock.LastDeleteForm["deleteFiles"]);
         }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task AddAsync_WhenExactTorrentAlreadyCompleted_ReusesWithoutChangingTorrent(bool concurrentAdd)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = """
+            [{ "hash": "abcdef1234567890abcdef1234567890abcdef12", "name": "Selected Book", "progress": 1 }]
+            """;
+            apiMock.FilesResponseOverride = """
+            [{ "name": "Selected Book/Selected Book.m4b" }]
+            """;
+            if (concurrentAdd)
+            {
+                apiMock.InfoResponseSequence.Enqueue("[]");
+                apiMock.AddStatusCode = System.Net.HttpStatusCode.Conflict;
+            }
+            apiMock.ResetRequestHistory();
+            var result = await _provider.GetRequiredService<IDownloadClientGateway>().AddAsync(
+                _client, PreparedSubmissionTestFactory.Torrent(new SearchResult
+                {
+                    Title = "Selected Book [M4B] [64 Kbps]",
+                    MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+                }));
+
+            Assert.Equal("ABCDEF1234567890ABCDEF1234567890ABCDEF12", result.ExternalId);
+            Assert.DoesNotContain(apiMock.RequestHistory, request =>
+                new[] { "/api/v2/torrents/delete", "/api/v2/torrents/resume", "/api/v2/torrents/start" }
+                    .Contains(request.RequestUri.AbsolutePath));
+            Assert.Equal(concurrentAdd ? 1 : 0,
+                apiMock.RequestHistory.Count(request => request.RequestUri.AbsolutePath == "/api/v2/torrents/add"));
+        }
+
+        [Theory]
+        [InlineData("Different Book", "Different Book.m4b")]
+        [InlineData("Selected Book", "Different Book.m4b")]
+        [InlineData("Selected Book", "Selected Book.epub")]
+        public async Task AddAsync_WhenExistingTorrentIsNotVerified_RejectsWithoutDeleting(string title, string payload)
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.InfoResponseOverride = System.Text.Json.JsonSerializer.Serialize(new[]
+            {
+                new { hash = "abcdef1234567890abcdef1234567890abcdef12", name = title }
+            });
+            apiMock.FilesResponseOverride = System.Text.Json.JsonSerializer.Serialize(new[]
+            {
+                new { name = payload },
+                new { name = "Selected Book.jpg" }
+            });
+            apiMock.ResetRequestHistory();
+
+            await Assert.ThrowsAsync<DownloadClientSubmissionException>(() =>
+                _provider.GetRequiredService<IDownloadClientGateway>().AddAsync(
+                    _client, PreparedSubmissionTestFactory.Torrent(new SearchResult
+                    {
+                        Title = "Selected Book",
+                        MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12"
+                    })));
+            Assert.DoesNotContain(apiMock.RequestHistory, request =>
+                new[] { "/api/v2/torrents/add", "/api/v2/torrents/delete", "/api/v2/torrents/resume", "/api/v2/torrents/start" }
+                    .Contains(request.RequestUri.AbsolutePath));
+        }
         [Fact]
         public async Task GetQueueAsync_WithIds_AddsHashesQuery()
         {

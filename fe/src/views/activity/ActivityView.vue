@@ -130,7 +130,7 @@
               <span v-else class="muted">-</span>
             </div>
             <div class="col-status">
-              <span :class="['status-badge', item.status]">
+              <span :class="['status-badge', item.status]" :title="item.errorMessage || undefined">
                 {{ formatStatus(item.status) }}
               </span>
               <span
@@ -508,6 +508,7 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
     downloadClientType:
       (download.downloadClientId || '').toString().toUpperCase() === 'DDL' ? 'DDL' : 'external',
     addedAt: download.startedAt,
+    errorMessage: download.errorMessage,
     canPause: false,
     canRemove: true,
   }

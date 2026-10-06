@@ -466,6 +466,7 @@ describe('ActivityView', () => {
           id: 'd-importblocked',
           title: 'Import Blocked',
           status: 'ImportBlocked',
+          errorMessage: 'Folder identity changed',
           progress: 100,
           totalSize: 1000,
           downloadedSize: 1000,
@@ -483,6 +484,9 @@ describe('ActivityView', () => {
     )
     expect(vm.allActivityItems.find((item) => item.id === 'd-importblocked')?.status).toBe(
       'importblocked',
+    )
+    expect(wrapper.find('.status-badge.importblocked').attributes('title')).toBe(
+      'Folder identity changed',
     )
   })
 

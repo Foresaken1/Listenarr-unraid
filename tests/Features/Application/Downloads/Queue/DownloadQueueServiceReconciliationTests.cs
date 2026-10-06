@@ -192,6 +192,53 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             Assert.Equal("db-id-match", result[0].Id);
         }
 
+        [Theory]
+        [InlineData(DownloadStatus.ImportBlocked, "importblocked")]
+        [InlineData(DownloadStatus.ImportPending, "importpending")]
+        [InlineData(DownloadStatus.Processing, "processing")]
+        [InlineData(DownloadStatus.Moved, "moved")]
+        public async Task GetQueueAsync_PreservesImportStatus_WhenClientReportsComplete(
+            DownloadStatus status, string expectedStatus)
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "qb-1",
+                Name = "qbit",
+                Type = "qbittorrent",
+                IsEnabled = true
+            };
+            var config = new Mock<IConfigurationService>();
+            config.Setup(c => c.GetDownloadClientConfigurationsAsync()).ReturnsAsync([client]);
+            config.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings());
+            var download = new Download
+            {
+                Id = "tracked",
+                DownloadClientId = client.Id,
+                Title = "Selected Book",
+                Status = status,
+                StartedAt = DateTime.UtcNow,
+                ErrorMessage = status == DownloadStatus.ImportBlocked ? "Folder identity changed" : null
+            };
+            var repository = new Mock<IDownloadRepository>();
+            SetupQueueRepository(repository, [download]);
+            var jobs = new Mock<IDownloadProcessingJobRepository>();
+            jobs.Setup(r => r.GetPendingDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync([]);
+            jobs.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync([]);
+            var gateway = new Mock<IDownloadClientGateway>();
+            gateway.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>())).ReturnsAsync([
+                new QueueItem { Id = download.Id, Title = download.Title, Status = "completed", Progress = 100 }
+            ]);
+            var service = CreateService(config.Object, repository.Object, jobs.Object, gateway.Object,
+                new Mock<IAppMetricsService>().Object);
+
+            for (var refresh = 0; refresh < 2; refresh++)
+            {
+                var item = Assert.Single(await service.GetQueueAsync());
+                Assert.Equal(expectedStatus, item.Status);
+                Assert.Equal(download.ErrorMessage, item.ErrorMessage);
+            }
+        }
+
         [Fact]
         [Trait("Scenario", "QueueUsesTargetedRepositoryQueries")]
         public async Task GetQueueAsync_UsesTargetedRepositoryQueries_InsteadOfGetAllAsync()

@@ -46,11 +46,25 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
             var addPlan = QbittorrentTorrentAddPlanner.Create(client, torrent);
 
+            if (await QbittorrentExistingTorrentLookup.ExistsAsync(httpClient, baseUrl, addPlan, ct))
+            {
+                await ValidatePayloadAndStartAsync(httpClient, baseUrl, client, addPlan, ct, existing: true);
+                return new DownloadClientSubmissionResult(addPlan.Hash, addPlan.Hash);
+            }
+
             using var addContent = QbittorrentAddRequestContentBuilder.Build(addPlan);
             using var addResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/add", addContent, ct);
 
             if (!addResponse.IsSuccessStatusCode)
             {
+                // Another request may have added this exact torrent after our lookup.
+                if (addResponse.StatusCode == System.Net.HttpStatusCode.Conflict &&
+                    await QbittorrentExistingTorrentLookup.ExistsAsync(httpClient, baseUrl, addPlan, ct))
+                {
+                    await ValidatePayloadAndStartAsync(httpClient, baseUrl, client, addPlan, ct, existing: true);
+                    return new DownloadClientSubmissionResult(addPlan.Hash, addPlan.Hash);
+                }
+
                 var responseContent = await addResponse.Content.ReadAsStringAsync(ct);
                 var redacted = LogRedaction.RedactText(responseContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat([client.Password ?? string.Empty]));
 
@@ -102,12 +116,14 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             string baseUrl,
             DownloadClientConfiguration client,
             QbittorrentTorrentAddPlan addPlan,
-            CancellationToken ct)
+            CancellationToken ct,
+            bool existing = false)
         {
             var files = await FetchTorrentFilesForInspectionAsync(httpClient, baseUrl, addPlan.Hash, ct);
             if (files.Count == 0)
             {
-                await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
+                if (!existing)
+                    await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
                 throw new DownloadClientSubmissionException("qBittorrent did not expose torrent payload metadata for inspection.");
             }
 
@@ -116,7 +132,8 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 logger.LogInformation(
                     "Rejected qBittorrent torrent {Hash} because its payload did not contain audio files",
                     LogRedaction.SanitizeText(addPlan.Hash));
-                await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
+                if (!existing)
+                    await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
                 throw new DownloadClientSubmissionException("qBittorrent torrent payload does not contain any supported audio files.");
             }
 
@@ -126,11 +143,13 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                     "Rejected qBittorrent torrent {Hash} because payload filenames did not match expected title '{Title}'",
                     LogRedaction.SanitizeText(addPlan.Hash),
                     LogRedaction.SanitizeText(addPlan.Title));
-                await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
+                if (!existing)
+                    await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
                 throw new DownloadClientSubmissionException("qBittorrent torrent payload does not match the selected audiobook title.");
             }
 
-            await StartTorrentAsync(httpClient, baseUrl, addPlan.Hash, ct);
+            if (!existing)
+                await StartTorrentAsync(httpClient, baseUrl, addPlan.Hash, ct);
         }
 
         private static async Task<List<Dictionary<string, JsonElement>>> FetchTorrentFilesForInspectionAsync(
@@ -165,7 +184,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
         private static bool IsAudioPayloadFile(Dictionary<string, JsonElement> file)
         {
-            if (!file.TryGetValue("name", out var nameElement))
+            if (!file.TryGetValue("name", out var nameElement) || nameElement.ValueKind != JsonValueKind.String)
             {
                 return false;
             }
@@ -192,6 +211,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             }
 
             var comparablePaths = files
+                .Where(IsAudioPayloadFile)
                 .Select(GetPayloadName)
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .Select(name => name!.Replace('\\', '/'))
@@ -206,7 +226,7 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
         private static string? GetPayloadName(Dictionary<string, JsonElement> file)
         {
-            return file.TryGetValue("name", out var nameElement)
+            return file.TryGetValue("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
                 ? nameElement.GetString()
                 : null;
         }
