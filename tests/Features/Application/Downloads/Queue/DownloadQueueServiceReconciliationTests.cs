@@ -193,12 +193,14 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
         }
 
         [Theory]
-        [InlineData(DownloadStatus.ImportBlocked, "importblocked")]
-        [InlineData(DownloadStatus.ImportPending, "importpending")]
-        [InlineData(DownloadStatus.Processing, "processing")]
-        [InlineData(DownloadStatus.Moved, "moved")]
+        [InlineData(DownloadStatus.ImportBlocked, "importblocked", "M4B", "Unknown", "M4B")]
+        [InlineData(DownloadStatus.ImportPending, "importpending", "M4B", "Unknown", "M4B")]
+        [InlineData(DownloadStatus.Processing, "processing", "M4B", "Unknown", "M4B")]
+        [InlineData(DownloadStatus.Moved, "moved", "M4B", "Unknown", "M4B")]
+        [InlineData(DownloadStatus.ImportBlocked, "importblocked", "", "Unknown", "M4B")]
+        [InlineData(DownloadStatus.ImportBlocked, "importblocked", "M4B", "MP3 128kbps", "MP3 128kbps")]
         public async Task GetQueueAsync_PreservesImportStatus_WhenClientReportsComplete(
-            DownloadStatus status, string expectedStatus)
+            DownloadStatus status, string expectedStatus, string savedQuality, string clientQuality, string expectedQuality)
         {
             var client = new DownloadClientConfiguration
             {
@@ -214,11 +216,13 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             {
                 Id = "tracked",
                 DownloadClientId = client.Id,
-                Title = "Selected Book",
+                Title = "Selected Book [M4B]",
                 Status = status,
                 StartedAt = DateTime.UtcNow,
-                ErrorMessage = status == DownloadStatus.ImportBlocked ? "Folder identity changed" : null
+                Metadata = new Dictionary<string, object> { ["Quality"] = savedQuality }
             };
+            if (status == DownloadStatus.ImportBlocked)
+                download.Blocked("folder_changed", "Folder identity changed");
             var repository = new Mock<IDownloadRepository>();
             SetupQueueRepository(repository, [download]);
             var jobs = new Mock<IDownloadProcessingJobRepository>();
@@ -226,7 +230,7 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             jobs.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync([]);
             var gateway = new Mock<IDownloadClientGateway>();
             gateway.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>())).ReturnsAsync([
-                new QueueItem { Id = download.Id, Title = download.Title, Status = "completed", Progress = 100 }
+                new QueueItem { Id = download.Id, Title = download.Title, Status = "completed", Progress = 100, Quality = clientQuality }
             ]);
             var service = CreateService(config.Object, repository.Object, jobs.Object, gateway.Object,
                 new Mock<IAppMetricsService>().Object);
@@ -235,7 +239,8 @@ namespace Listenarr.Tests.Features.Application.Downloads.Queue
             {
                 var item = Assert.Single(await service.GetQueueAsync());
                 Assert.Equal(expectedStatus, item.Status);
-                Assert.Equal(download.ErrorMessage, item.ErrorMessage);
+                Assert.Equal(status == DownloadStatus.ImportBlocked ? "Folder identity changed" : null, item.ErrorMessage);
+                Assert.Equal(expectedQuality, item.Quality);
             }
         }
 

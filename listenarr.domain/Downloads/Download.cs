@@ -249,6 +249,17 @@ namespace Listenarr.Domain.Downloads
             return Status == DownloadStatus.ImportBlocked;
         }
 
+        public string? GetDisplayErrorMessage()
+        {
+            if (!IsBlocked())
+                return ErrorMessage;
+
+            return ImportBlockMessages?.LastOrDefault(message => !string.IsNullOrWhiteSpace(message))
+                ?? (!string.IsNullOrWhiteSpace(ErrorMessage) ? ErrorMessage : null)
+                ?? (!string.IsNullOrWhiteSpace(ImportBlockReason) ? ImportBlockReason : null)
+                ?? "Import is blocked. Review the download processing logs for details.";
+        }
+
         public void AddBlockMessage(string message)
         {
             if (ImportBlockMessages == null)
@@ -311,7 +322,7 @@ namespace Listenarr.Domain.Downloads
                 FinalPath = FinalPath,
                 StartedAt = StartedAt,
                 CompletedAt = CompletedAt,
-                ErrorMessage = ErrorMessage,
+                ErrorMessage = GetDisplayErrorMessage(),
                 DownloadClientId = DownloadClientId
             };
         }

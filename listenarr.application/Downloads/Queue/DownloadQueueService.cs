@@ -141,7 +141,7 @@ namespace Listenarr.Application.Downloads.Queue
                                     DownloadStatus.ImportPending or DownloadStatus.Processing or DownloadStatus.Moved)
                                 {
                                     queueItem.Status = ToQueueStatus(matchedDownload.Status);
-                                    queueItem.ErrorMessage = matchedDownload.ErrorMessage;
+                                    queueItem.ErrorMessage = matchedDownload.GetDisplayErrorMessage();
                                 }
 
                                 await PersistDiscoveredClientIdentifiersAsync(matchedDownload, client, originalClientId, allKnownClientItemIds);
@@ -149,6 +149,16 @@ namespace Listenarr.Application.Downloads.Queue
                                 if (!string.IsNullOrWhiteSpace(matchedDownload.Title))
                                 {
                                     queueItem.Title = matchedDownload.Title;
+                                }
+
+                                if (string.IsNullOrWhiteSpace(queueItem.Quality) ||
+                                    queueItem.Quality.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    var savedQuality = matchedDownload.GetMetadataString("Quality");
+                                    queueItem.Quality = !string.IsNullOrWhiteSpace(savedQuality) &&
+                                        !savedQuality.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+                                        ? savedQuality
+                                        : Listenarr.Application.Search.Parsing.SearchResultAttributeParser.DetectQualityFromFormat(queueItem.Title);
                                 }
 
                                 if (string.IsNullOrWhiteSpace(queueItem.Author) && !string.IsNullOrWhiteSpace(matchedDownload.Artist))
@@ -406,7 +416,7 @@ namespace Listenarr.Application.Downloads.Queue
                 ContentPath = string.IsNullOrWhiteSpace(download.FinalPath)
                     ? download.DownloadPath
                     : download.FinalPath,
-                ErrorMessage = download.ErrorMessage
+                ErrorMessage = download.GetDisplayErrorMessage()
             };
         }
 
