@@ -23,6 +23,7 @@ internal static class QbittorrentTorrentAddPlanner
             : null;
 
         return new QbittorrentTorrentAddPlan(
+            submission.Title,
             submission.InfoHash,
             client.DownloadPath ?? string.Empty,
             category,
@@ -37,6 +38,7 @@ internal static class QbittorrentTorrentAddPlanner
 }
 
 internal sealed record QbittorrentTorrentAddPlan(
+    string Title,
     string Hash,
     string SavePath,
     string? Category,

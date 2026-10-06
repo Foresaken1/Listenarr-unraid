@@ -92,6 +92,52 @@ namespace Listenarr.Tests.Features.Application.Downloads.Submission
         }
 
         [Fact]
+        public async Task SendToDownloadClientAsync_WhenActiveDownloadHasDifferentTitle_RetiresMismatchAndSubmitsSelectedResult()
+        {
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock
+                .Setup(g => g.AddAsync(It.IsAny<DownloadClientConfiguration>(), It.IsAny<PreparedDownloadSubmission>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new DownloadClientSubmissionResult("ABCDEF1234567890ABCDEF1234567890ABCDEF12"));
+            _services.AddSingleton(gatewayMock.Object);
+
+            Init();
+            await InitData();
+            await _downloadRepository.RemoveAsync(_download.Id);
+
+            var mismatched = new DownloadBuilder()
+                .WithId("wrong-active-download")
+                .WithDownloadClientConfiguration(_client)
+                .WithAudiobook(_audiobook)
+                .WithTitle("Completely Different Audiobook")
+                .WithStatus(DownloadStatus.Downloading)
+                .Build();
+            await _downloadRepository.AddAsync(mismatched);
+
+            var downloadService = _provider.GetRequiredService<DownloadService>();
+            var searchResult = new SearchResult
+            {
+                Title = "The Correct Audiobook",
+                Artist = "Test Author",
+                DownloadType = "Torrent",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                Size = 123456789
+            };
+
+            var downloadId = await downloadService.SendToDownloadClientAsync(searchResult, _client.Id, _audiobook.Id);
+
+            Assert.False(string.IsNullOrWhiteSpace(downloadId));
+            var retired = await _downloadRepository.GetByIdAsync("wrong-active-download");
+            Assert.NotNull(retired);
+            Assert.Equal(DownloadStatus.Failed, retired!.Status);
+            Assert.Contains("Superseded by a different selected result", retired.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+
+            var created = await _downloadRepository.GetByIdAsync(downloadId);
+            Assert.NotNull(created);
+            Assert.Equal("The Correct Audiobook", created!.Title);
+            Assert.Equal("ABCDEF1234567890ABCDEF1234567890ABCDEF12", created.Metadata["TorrentHash"]?.ToString());
+        }
+
+        [Fact]
         public async Task SendToDownloadClientAsync_WhenClientSubmissionFails_RemovesProvisionalDownloadAndDoesNotRecordGrab()
         {
             var gatewayMock = new Mock<IDownloadClientGateway>(MockBehavior.Strict);

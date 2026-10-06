@@ -226,6 +226,39 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Qbittorrent
         }
 
         [Fact]
+        public async Task AddAsync_WhenQbittorrentPayloadTitleDiffers_RemovesTorrentAndRejectsSubmission()
+        {
+            var apiMock = _provider.GetRequiredService<QbittorrentApiMock>();
+            apiMock.FilesResponseOverride = """
+            [
+                { "name": "Completely Different Audiobook/Chapter 01.m4b" }
+            ]
+            """;
+
+            var client = await _downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfigurationBuilder()
+                .WithHost("localhost")
+                .WithPort(8080)
+                .WithUsername("admin")
+                .WithPassword("admin")
+                .WithType("qbittorrent")
+                .Build());
+
+            var adapter = _provider.GetRequiredService<IDownloadClientGateway>();
+            var submission = PreparedSubmissionTestFactory.Torrent(
+                "The Correct Audiobook",
+                "ABCDEF1234567890ABCDEF1234567890ABCDEF12",
+                magnet: "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12&dn=The+Correct+Audiobook");
+
+            var exception = await Assert.ThrowsAsync<DownloadClientSubmissionException>(
+                () => adapter.AddAsync(client, submission));
+
+            Assert.Contains("payload does not match", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(apiMock.LastDeleteForm);
+            Assert.Equal("ABCDEF1234567890ABCDEF1234567890ABCDEF12", apiMock.LastDeleteForm!["hashes"]);
+            Assert.Equal("true", apiMock.LastDeleteForm["deleteFiles"]);
+        }
+
+        [Fact]
         public async Task AddAsync_WhenTorrentBytesAreInvalid_DoesNotCallQbittorrentAdd()
         {
             var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);

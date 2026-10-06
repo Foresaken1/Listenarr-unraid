@@ -18,9 +18,25 @@
 
 namespace Listenarr.Application.Downloads.Processing
 {
+    using Listenarr.Domain.Common;
+
     internal static class DownloadDuplicateGuard
     {
         public static async Task<bool> HasActiveDownloadAsync(
+            int audiobookId,
+            string candidateTitle,
+            IConfigurationService configurationService,
+            IDownloadRepository downloadRepository)
+        {
+            var activeDownloads = await GetActiveDownloadsAsync(
+                audiobookId,
+                configurationService,
+                downloadRepository);
+
+            return activeDownloads.Any(download => IsSameDownloadTitle(download.Title, candidateTitle));
+        }
+
+        public static async Task<List<Download>> GetActiveDownloadsAsync(
             int audiobookId,
             IConfigurationService configurationService,
             IDownloadRepository downloadRepository)
@@ -33,12 +49,29 @@ namespace Listenarr.Application.Downloads.Processing
 
             var allDownloads = await downloadRepository.GetAllAsync();
             return allDownloads
-                .Any(d => d.AudiobookId == audiobookId &&
-                          (d.Status == DownloadStatus.Queued ||
-                           d.Status == DownloadStatus.Downloading ||
-                           d.Status == DownloadStatus.ImportPending) &&
-                          (string.Equals(d.DownloadClientId, DirectDownloadMetadataKeys.ClientId, StringComparison.OrdinalIgnoreCase) ||
-                           (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId))));
+                .Where(d => d.AudiobookId == audiobookId &&
+                            (d.Status == DownloadStatus.Queued ||
+                             d.Status == DownloadStatus.Downloading ||
+                             d.Status == DownloadStatus.ImportPending) &&
+                            (string.Equals(d.DownloadClientId, DirectDownloadMetadataKeys.ClientId, StringComparison.OrdinalIgnoreCase) ||
+                             (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId))))
+                .ToList();
+        }
+
+        public static bool IsSameDownloadTitle(string existingTitle, string candidateTitle)
+        {
+            if (string.IsNullOrWhiteSpace(existingTitle) || string.IsNullOrWhiteSpace(candidateTitle))
+            {
+                return true;
+            }
+
+            var normalizedCandidate = TitleUtils.NormalizeTitle(candidateTitle);
+            if (normalizedCandidate.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 2)
+            {
+                return true;
+            }
+
+            return TitleUtils.IsMatchingTitle(existingTitle, candidateTitle);
         }
     }
 }

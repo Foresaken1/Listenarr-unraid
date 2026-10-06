@@ -249,8 +249,15 @@ namespace Listenarr.Application.Downloads.Submission
             {
                 try
                 {
+                    await DownloadMismatchRetirement.RetireAsync(
+                        audiobookIdValue,
+                        candidate,
+                        configurationService,
+                        downloadRepository,
+                        logger);
                     if (await DownloadDuplicateGuard.HasActiveDownloadAsync(
                             audiobookIdValue,
+                            candidate.Title,
                             configurationService,
                             downloadRepository))
                     {
@@ -431,11 +438,6 @@ namespace Listenarr.Application.Downloads.Submission
         {
             return await downloadRemovalWorkflow.RemoveAsync(downloadId, downloadClientId, force);
         }
-
-        //
-        // Helper stubs added to satisfy callers while refactor completes.
-        // These are conservative, safe no-op / simple implementations.
-        //
 
         private static SearchResult ToSearchResult(
             TrustedDownloadCandidate candidate,

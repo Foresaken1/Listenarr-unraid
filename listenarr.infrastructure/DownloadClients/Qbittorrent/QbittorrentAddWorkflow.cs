@@ -120,6 +120,16 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
                 throw new DownloadClientSubmissionException("qBittorrent torrent payload does not contain any supported audio files.");
             }
 
+            if (!PayloadMatchesExpectedTitle(files, addPlan.Title))
+            {
+                logger.LogInformation(
+                    "Rejected qBittorrent torrent {Hash} because payload filenames did not match expected title '{Title}'",
+                    LogRedaction.SanitizeText(addPlan.Hash),
+                    LogRedaction.SanitizeText(addPlan.Title));
+                await RemoveRejectedTorrentAsync(client, addPlan.Hash, ct);
+                throw new DownloadClientSubmissionException("qBittorrent torrent payload does not match the selected audiobook title.");
+            }
+
             await StartTorrentAsync(httpClient, baseUrl, addPlan.Hash, ct);
         }
 
@@ -169,6 +179,36 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
             var fileName = Path.GetFileNameWithoutExtension(name.Replace('\\', '/'));
             return !fileName.Contains("sample", StringComparison.OrdinalIgnoreCase)
                 && !fileName.Contains("preview", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool PayloadMatchesExpectedTitle(
+            IReadOnlyCollection<Dictionary<string, JsonElement>> files,
+            string expectedTitle)
+        {
+            var normalizedExpected = TitleUtils.NormalizeTitle(expectedTitle);
+            if (normalizedExpected.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 2)
+            {
+                return true;
+            }
+
+            var comparablePaths = files
+                .Select(GetPayloadName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => name!.Replace('\\', '/'))
+                .ToList();
+
+            return comparablePaths.Count == 0 ||
+                   comparablePaths.Any(path =>
+                       TitleUtils.IsMatchingTitle(expectedTitle, path) ||
+                       path.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                           .Any(segment => TitleUtils.IsMatchingTitle(expectedTitle, Path.GetFileNameWithoutExtension(segment))));
+        }
+
+        private static string? GetPayloadName(Dictionary<string, JsonElement> file)
+        {
+            return file.TryGetValue("name", out var nameElement)
+                ? nameElement.GetString()
+                : null;
         }
 
         private async Task StartTorrentAsync(HttpClient httpClient, string baseUrl, string hash, CancellationToken ct)
