@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Globalization;
 using System.Text.Json;
 
 namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
@@ -217,7 +218,43 @@ namespace Listenarr.Infrastructure.DownloadClients.Qbittorrent
 
         private static int? GetNullableInt32(Dictionary<string, JsonElement> values, string key)
         {
-            return values.TryGetValue(key, out var element) ? element.GetInt32() : null;
+            if (!values.TryGetValue(key, out var element) || element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
+                return null;
+            }
+
+            if (element.ValueKind == JsonValueKind.Number)
+            {
+                if (element.TryGetInt32(out var intValue))
+                {
+                    return intValue;
+                }
+
+                if (element.TryGetInt64(out var longValue) && longValue is >= int.MinValue and <= int.MaxValue)
+                {
+                    return (int)longValue;
+                }
+
+                if (element.TryGetDouble(out var doubleValue) &&
+                    doubleValue is >= int.MinValue and <= int.MaxValue &&
+                    doubleValue == Math.Truncate(doubleValue))
+                {
+                    return (int)doubleValue;
+                }
+
+                return null;
+            }
+
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                var raw = element.GetString();
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            return null;
         }
 
         private static long? GetNullableInt64(Dictionary<string, JsonElement> values, string key)
